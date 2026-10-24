@@ -1,0 +1,16 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl.bak
+crash.log
+
+# Secrets / keys
+*.pem
+.env
+*.retry
+
+#other 
+plan.md
+"Assignment on Deploying a MERN Application through Terraform and Ansible.pdf"
