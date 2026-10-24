@@ -1,0 +1,59 @@
+- name: Install and secure MongoDB
+  hosts: db
+  become: true
+
+  tasks:
+    # Install Mongodb
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name: [gnupg,curl]
+        state: present
+        update_cache: true
+
+    - name: Download MongoDB key
+      ansible.builtin.get_url:
+        url: https://www.mongodb.org/static/pgp/server-7.0.asc
+        dest: /usr/share/keyrings/mongodb-server-7.0.asc
+        mode: '0644'
+    
+    - name: Add mongodb repository
+      ansible.builtin.apt_repository:
+        repo: "deb [ arch=amd64 signed-by=/usr/share/keyrings/mongodb-server-7.0.asc ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse"
+        filename: mongodb-org-7.0
+        state: present
+
+    - name: Install MongoDB
+      ansible.builtin.apt:
+        name: mongodb-org
+        state: present
+        update_cache: true
+    
+    - name: Start and Enable MongoDB Service
+      ansible.builtin.service:
+        name: mongod
+        state: started
+        enabled: true
+
+    - name: Create admin user
+      ansible.builtin.shell: |
+        mongosh --quiet --eval '
+          db.getSiblingDB("admin").createUser({user: "{{mongo_admin_user}}",pwd: "{{mongo_admin_password}}", roles: ["root"]});
+          db.getSiblingDB("{{mongo_db_name}}").createUser({user: "{{mongo_app_user}}",pwd: "{{mongo_app_password}}", roles: [{role: "readWrite", db: "{{mongo_db_name}}"}]});
+        ' && touch /etc/mongo_users_created
+      args:
+        creates: /etc/mongo_users_created 
+      no_log: false
+
+    # Lock it down
+    - name: Deploy MongoDB configuration file
+      ansible.builtin.template:
+        src: ../templates/mongod.conf.j2
+        dest: /etc/mongod.conf  
+        mode: '0644'
+      notify: Restart mongod
+  
+  handlers:
+    - name: Restart mongod
+      ansible.builtin.service:
+        name: mongod
+        state: restarted

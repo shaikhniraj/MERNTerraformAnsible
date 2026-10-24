@@ -1,0 +1,18 @@
+#App
+app_repo: https://github.com/UnpredictablePrashant/TravelMemory.git
+app_dir: /opt/travelmemory
+backend_port: 3001
+node_major: 20
+
+
+#MongoDB
+mongo_db_name: travelmemory
+mongo_admin_user: admin
+mongo_app_user: travelapp
+
+# Passwords come from the encrypted vault file (created later on the server)
+mongo_admin_password: "{{ vault_mongo_admin_password }}"
+mongo_app_password: "{{ vault_mongo_app_password }}"
+
+# DB server's private IP, read from the inventory instead of typed twice
+db_private_ip: "{{ hostvars['db1'].ansible_host }}"

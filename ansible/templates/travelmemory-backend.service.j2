@@ -1,0 +1,14 @@
+[Unit]
+Description=TravelMemory Express backend
+After=network.target
+
+[Service]
+User=nodeapp
+WorkingDirectory={{ app_dir }}/backend
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

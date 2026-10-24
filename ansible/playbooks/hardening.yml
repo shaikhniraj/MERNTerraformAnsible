@@ -1,0 +1,85 @@
+# ---------- Play 1: both servers ----------
+- name: Common hardening
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install security packages
+      ansible.builtin.apt:
+        name: [ufw, fail2ban, unattended-upgrades]
+        state: present
+        update_cache: true
+
+    - name: Harden SSH (drop-in config)
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/00-hardening.conf
+        mode: "0644"
+        content: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          X11Forwarding no
+          MaxAuthTries 3
+        validate: /usr/sbin/sshd -t -f %s      # test the config before installing it
+      notify: Restart ssh
+
+    - name: Enable fail2ban (bans IPs after repeated failed SSH logins)
+      ansible.builtin.service:
+        name: fail2ban
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.service:
+        name: ssh                              # on Ubuntu the service is "ssh", not "sshd"
+        state: restarted
+
+# ---------- Play 2: web firewall ----------
+- name: Web server firewall
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Allow SSH
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: Allow HTTP
+      community.general.ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+
+    - name: Enable UFW (deny all other incoming)
+      community.general.ufw:
+        state: enabled
+        default: deny
+        direction: incoming
+
+# ---------- Play 3: DB firewall ----------
+- name: DB server firewall
+  hosts: db
+  become: true
+
+  tasks:
+    - name: Allow SSH only from the web subnet
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        from_ip: "{{ web_subnet_cidr }}"
+
+    - name: Allow MongoDB only from the web subnet
+      community.general.ufw:
+        rule: allow
+        port: "27017"
+        proto: tcp
+        from_ip: "{{ web_subnet_cidr }}"
+
+    - name: Enable UFW (deny all other incoming)
+      community.general.ufw:
+        state: enabled
+        default: deny
+        direction: incoming

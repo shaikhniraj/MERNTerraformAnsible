@@ -1,0 +1,136 @@
+- name: Deploy Travel memory web server
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name: [curl, git, gnupg]
+        state: present
+        update_cache: true
+    
+    - name: add NodeSource repo
+      ansible.builtin.shell: curl -fsSL https://deb.nodesource.com/setup_{{ node_major }}.x | bash -
+      args:
+        creates: /etc/apt/sources.list.d/nodesource.list
+    
+    - name: Install Node.js
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+        update_cache: true
+
+    - name: create a non-root user for the app
+      ansible.builtin.user:
+        name: nodeapp
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+
+    - name: Clone the app repo
+      ansible.builtin.git:
+        repo: "{{ app_repo }}"
+        dest: "{{ app_dir }}"
+        version: main
+        force: true
+        
+    - name: Install backened dependencies
+      community.general.npm:
+        path: "{{ app_dir }}/backend"
+    
+    # ---------- Backend config + service ----------
+    - name: Create backend .env
+      ansible.builtin.template:
+        src: ../templates/backend.env.j2
+        dest: "{{ app_dir }}/backend/.env"
+        owner: nodeapp
+        mode: '0640'
+      notify: Restart backend
+
+    - name: Install SystemD unit for the backend
+      ansible.builtin.template:
+        src: ../templates/travelmemory-backend.service.j2
+        dest: /etc/systemd/system/travelmemory-backend.service
+        mode: '0600'
+      notify: Restart backend
+
+    - name: Start and enable backend service
+      ansible.builtin.systemd:
+        name: travelmemory-backend
+        state: started
+        enabled: true           
+        daemon_reload: true
+
+        # ---------- Swap for extra ram ----------
+    - name: Create 2G swap file
+      ansible.builtin.shell: fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+      args:
+        creates: /swapfile
+
+    - name: Keep swap after reboot
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "/swapfile none swap sw 0 0"
+
+
+    # ---------- Frontend build ----------
+    - name: Create frontend .env
+      ansible.builtin.template:
+        src: ../templates/frontend.env.j2
+        dest: "{{ app_dir }}/frontend/.env"
+        mode: "0644"
+      register: frontend_env                 # remember whether this task changed anything
+
+    - name: Install frontend dependencies
+      community.general.npm:
+        path: "{{ app_dir }}/frontend"
+
+    - name: Check whether a build exists
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/frontend/build/index.html"
+      register: frontend_build
+
+    - name: Build React app
+      ansible.builtin.command: npm run build
+      args:
+        chdir: "{{ app_dir }}/frontend"
+      when: frontend_env.changed or not frontend_build.stat.exists
+
+    # ---------- Nginx ----------
+    - name: Install Nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+
+    - name: Deploy Nginx site config
+      ansible.builtin.template:
+        src: ../templates/nginx-travelmemory.conf.j2
+        dest: /etc/nginx/sites-available/travelmemory
+        mode: "0600"
+      notify: Reload nginx
+
+    - name: Enable the site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/travelmemory
+        dest: /etc/nginx/sites-enabled/travelmemory
+        state: link
+      notify: Reload nginx
+
+    - name: Disable the default Nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent                         # hint: make it not exist
+      notify: Reload nginx
+
+  handlers:
+    - name: Restart backend
+      ansible.builtin.systemd:
+        name: travelmemory-backend
+        state: restarted
+        daemon_reload: true
+    
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+
