@@ -48,7 +48,7 @@
         ' && touch /etc/mongo_users_created
       args:
         creates: /etc/mongo_users_created 
-      no_log: false
+      no_log: true 
 
     # Lock it down
     - name: Deploy MongoDB configuration file
