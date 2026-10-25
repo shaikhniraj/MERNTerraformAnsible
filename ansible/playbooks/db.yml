@@ -33,6 +33,12 @@
         name: mongod
         state: started
         enabled: true
+    
+    - name: Wait for MongoDB to accept connections
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 27017
+        timeout: 60
 
     - name: Create admin user
       ansible.builtin.shell: |
